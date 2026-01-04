@@ -4,10 +4,11 @@
 
 **Cursor-Token-Saver-and-Optimizer** 是一个给予开发者完全掌控 Cursor AI 能力的解决方案。
 
-Cursor 的设计初衷是照顾初学者，这往往导致其系统提示词（System Prompts）过于“臃肿”，消耗了不必要的 Token。此外，Cursor 默认的系统提示词限制了某些 CLI 命令（如 `echo` 或 `cat`），并且在与 Gemini 等特定模型配合时可能会遇到转义符格式化问题。本项目让你拥有对提示词的**完全控制权**，实现更精简的提示词、自定义规则，并最高可**节省 50% 的 Token 消耗**。
+Cursor 的设计初衷是照顾初学者，这往往导致其系统提示词（System Prompts）过于“臃肿”，消耗了不必要的 Token。此外，Cursor 默认的系统提示词限制了某些 CLI 命令（如 `echo` 或 `cat`），并且在与 Gemini 等特定模型配合时可能会遇到转义符格式化问题。此外，Cursor缺乏真正的**OpenAI API标准兼容性**；例如，如果您通过兼容OpenAI的提供商使用Claude模型，Cursor会忽略标准的OpenAI API格式，并强制使用其特有的Anthropic请求结构。本项目让你拥有对提示词的**完全控制权**，实现更精简的提示词、自定义规则，并最高可**节省 50% 的 Token 消耗**。
 
 ### 🌟 核心特性
 
+* **通用兼容性**：对请求进行标准化，以便您可以通过任何与OpenAI兼容的提供商使用像**Claude**这样的模型，而不会出现错误。
 * **Token 优化：** 剔除冗余的系统提示词，降低成本并减少延迟。
 * **命令释放：** 解除对 `echo` 或 `cat` 等系统级命令的限制。
 * **模型兼容性：** 修复了转义字符处理问题，使 **Gemini** 和 **Grok** 等模型能与 Cursor 完美兼容。
@@ -55,7 +56,7 @@ python forward.py
 1. 打开 Cursor 设置（Settings）。
 2. 导航至 **Models** > **OpenAI API Key**（或相关的提供商）。
 3. 将 **Base URL** 修改为你的新域名（例如：`https://your-domain.com/v1`）。
-
+4. 在Cursor中选择一个Gemini系列模型，如果你想使用其他模型，请在`forward.py`中替换模型名称。不要在Cursor内选择其他模型；否则，Cursor将发送非OpenAI兼容的请求。
 ---
 
 ## 📊 用量监控
