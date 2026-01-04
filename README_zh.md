@@ -1,6 +1,6 @@
 
 # Cursor-Token-Saver-and-Optimizer 
-[Youtube 视频演示](https://www.google.com/search?q=placeholder-link) | [English Version](https://www.google.com/search?q=placeholder-link)
+[Youtube 视频演示](https://www.google.com/search?q=placeholder-link) | [English Version](https://github.com/Bob8259/Cursor-Token-Saver-and-Optimizer)
 
 **Cursor-Token-Saver-and-Optimizer** 是一个专为希望完全掌控 Cursor AI 体验的开发者设计的中间件解决方案。
 
