@@ -29,14 +29,18 @@ app = Flask(__name__)
 
 
 def log_transaction(request_body, raw_chunks, start_time, end_time):
-    """Saves the request and all raw chunks received from the model."""
-    if not os.path.exists("logs"):
-        os.makedirs("logs")
+    """Saves the request and all raw chunks, then prunes logs to keep only the 100 newest."""
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
+    # 1. Save the new log
     timestamp_str = datetime.datetime.fromtimestamp(start_time).strftime(
         "%Y%m%d-%H%M%S"
     )
-    filepath = os.path.join("logs", f"log_{timestamp_str}.json")
+    # Adding microseconds to filename to avoid collisions on rapid requests
+    micro = datetime.datetime.fromtimestamp(start_time).strftime("%f")
+    filepath = os.path.join(log_dir, f"log_{timestamp_str}_{micro}.json")
 
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(
@@ -46,12 +50,29 @@ def log_transaction(request_body, raw_chunks, start_time, end_time):
                 "start_time_raw": start_time,
                 "end_time_raw": end_time,
                 "request_body": request_body,
-                "raw_chunks": raw_chunks,  # This stores the exact data received
+                "raw_chunks": raw_chunks,
             },
             f,
             indent=4,
             ensure_ascii=False,
         )
+
+    # 2. Prune old logs (Keep only newest 100)
+    try:
+        # Get all log files
+        log_files = glob.glob(os.path.join(log_dir, "log_*.json"))
+
+        # Sort files by modification time (newest first)
+        log_files.sort(key=os.path.getmtime, reverse=True)
+
+        # If there are more than 100, delete the excess
+        if len(log_files) > 100:
+            files_to_delete = log_files[100:]
+            for old_file in files_to_delete:
+                os.remove(old_file)
+                print(f"Pruned old log: {old_file}")
+    except Exception as e:
+        print(f"Error pruning logs: {e}")
 
 
 def get_optimized_tools(tools_file):
@@ -246,6 +267,22 @@ def get_log_detail(filename):
 
 @app.route("/v1/chat/completions", methods=["POST"])
 def proxy_chat():
+    # 1. Get the Authorization header
+    auth_header = request.headers.get("Authorization")
+    expected_api_key = os.getenv("API_KEY")
+
+    # 2. Check if the header exists and starts with 'Bearer '
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return (
+            jsonify({"error": "Unauthorized: Missing or invalid Authorization header"}),
+            401,
+        )
+
+    # 3. Extract the token and compare
+    token = auth_header.split(" ")[1]
+    if token != expected_api_key:
+        return jsonify({"error": "Unauthorized: Invalid API Key"}), 401
+
     data = request.json
     messages = data.get("messages", [])
     print(
@@ -318,53 +355,54 @@ def proxy_chat():
         max_retries = 10
         retry_count = 0
         start_time = time.time()
+        captured_chunks = []
+        logged = False  # Flag to prevent duplicate logs
 
         while retry_count < max_retries:
             try:
-                print(
-                    f"Debug: Attempt {retry_count + 1} to start streaming from {TARGET_URL}..."
-                )
-                # timeout=30 here applies to both connection and read (silence between chunks)
+                print(f"Debug: Attempt {retry_count + 1}...")
                 response = requests.post(
-                    TARGET_URL, headers=headers, json=data, stream=True, timeout=30
+                    TARGET_URL, headers=headers, json=data, stream=True, timeout=60
                 )
                 response.raise_for_status()
 
-                captured_chunks = []
                 chunk_count = 0
-
-                # response.iter_lines() will raise requests.exceptions.Timeout if 30s passes without data
                 for chunk in response.iter_lines():
                     if not chunk:
                         continue
 
                     decoded_chunk = chunk.decode("utf-8")
                     yield decoded_chunk + "\n"
-
-                    # Store the raw chunk string (e.g., "data: {...}")
                     captured_chunks.append(decoded_chunk)
                     chunk_count += 1
 
-                    if chunk_count % 10 == 0:
-                        print(f"Debug: Sent {chunk_count} chunks...")
-
-                    # Check for the end of the stream to trigger logging
                     if "data: [DONE]" in decoded_chunk:
                         end_time = time.time()
-                        print(f"Debug: Streaming finished. Total chunks: {chunk_count}")
                         log_transaction(data, captured_chunks, start_time, end_time)
+                        logged = True
                         return
 
-                # If the loop finishes without [DONE], it might be an incomplete stream
                 raise Exception("Stream ended unexpectedly without [DONE]")
 
             except Exception as e:
                 retry_count += 1
                 print(f"Error: Attempt {retry_count}/{max_retries} failed: {e}")
+
+                # If we've exhausted retries OR it's a 4xx error that won't succeed with retries
                 if retry_count >= max_retries:
                     error_msg = f"Failed after {max_retries} attempts: {str(e)}"
+
+                    # Log the failure before yielding the final error chunk
+                    if not logged:
+                        end_time = time.time()
+                        # We append the error to captured_chunks so you can see it in the log
+                        captured_chunks.append(f"LOG_ERROR: {error_msg}")
+                        log_transaction(data, captured_chunks, start_time, end_time)
+                        logged = True
+
                     yield f'data: {{"error": "{error_msg}"}}\n\ndata: [DONE]\n'
                     return
+
                 time.sleep(1)
 
     return Response(stream_with_context(generate()), content_type="text/event-stream")
